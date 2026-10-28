@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Test
+        run: pytest --cov=rfmc --cov-report=term-missing
+
+      - name: Smoke-test the pipeline end to end
+        run: |
+          python - <<'PY'
+          from rfmc.config import Config
+          from rfmc.dataset import generate_split
+          from rfmc import baseline
+
+          cfg = Config()
+          cfg.impairments.snr_db_min, cfg.impairments.snr_db_max = 0.0, 10.0
+          cfg.impairments.snr_db_step = 10.0
+          cfg.data.per_class_per_snr = {"train": 12, "test": 6}
+          cfg.data.seeds = {"train": 1, "test": 2}
+
+          train = generate_split(cfg, "train")
+          test = generate_split(cfg, "test")
+          model, info = baseline.fit(train, cfg.signal.sps)
+          predictions = baseline.predict(model, test, cfg.signal.sps)
+          print("smoke accuracy", (predictions == test.y).mean())
+          PY

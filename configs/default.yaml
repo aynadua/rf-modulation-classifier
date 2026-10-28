@@ -1,0 +1,37 @@
+# Default experiment. Override any subset of these keys with --config.
+signal:
+  n_samples: 512      # 64 symbols at 8 samples/symbol
+  sps: 8
+  rrc_beta: 0.35
+  rrc_span: 10
+
+impairments:
+  snr_db_min: -10.0
+  snr_db_max: 20.0
+  snr_db_step: 2.0
+  max_taps: 4
+  rician_k_db_min: 4.0
+  rician_k_db_max: 18.0
+  delay_spread: 2.0
+  cfo_norm_max: 0.001   # +/- 0.001 cycles/sample = up to half a turn over the window
+  timing_off_max: 1.0
+  sro_ppm_max: 50.0
+
+data:
+  per_class_per_snr:
+    train: 600
+    val: 150
+    test: 250
+  seeds:
+    train: 11
+    val: 22
+    test: 33
+  out_dir: data
+
+train:
+  epochs: 30
+  batch_size: 256
+  lr: 0.002
+  weight_decay: 0.0001
+  patience: 6
+  seed: 7
