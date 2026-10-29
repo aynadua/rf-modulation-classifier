@@ -30,8 +30,8 @@ balanced across all six schemes and all 16 SNR points.
 
 | Model | Overall | SNR ≥ 10 dB | Size | p50 latency |
 |---|---:|---:|---:|---:|
-| Cumulant features + gradient boosting | 0.539 | 0.786 | — | — |
-| CNN (PyTorch fp32) | 0.761 | 0.932 | — | — |
+| Cumulant features + gradient boosting | 0.539 | 0.786 | n/a | n/a |
+| CNN (PyTorch fp32) | 0.761 | 0.932 | n/a | n/a |
 | CNN (ONNX fp32) | 0.761 | 0.932 | 443 KB | 0.40 ms |
 | **CNN (ONNX int8)** | **0.761** | **0.933** | **130 KB** | **0.10 ms** |
 
@@ -85,7 +85,8 @@ hyperparameter problem. Look at what the receiver actually sees:
 ![constellations](reports/constellations.png)
 
 At 20 dB the 16QAM grid is cleanly separated while the 64QAM grid is already a
-smear — an 8×8 constellation needs roughly 26 dB before its points resolve. A
+smear, because an 8x8 constellation needs roughly 26 dB before its points
+resolve. A
 short 64-symbol burst of 64QAM at 12 dB genuinely does not contain enough
 information to distinguish it from 16QAM. The honest conclusion is that this
 pair is separable only with longer observation windows, not with a better
@@ -98,26 +99,26 @@ network.
 Each example is an independent realisation pushed through a full transmit and
 channel chain:
 
-1. **Symbols** drawn from a unit-average-energy constellation. Normalising the
+1. Random symbols drawn from a unit-average-energy constellation. Normalising the
    constellations matters: if 64QAM arrived with more power than BPSK, the
    classifier could separate them on amplitude alone and the whole benchmark
    would be fake.
-2. **Pulse shaping** with a root-raised-cosine filter (roll-off 0.35, 8
+2. Pulse shaping with a root-raised-cosine filter (roll-off 0.35, 8
    samples/symbol, 10-symbol span).
-3. **Multipath** with an exponential power-delay profile, Rician or Rayleigh,
+3. Multipath with an exponential power-delay profile, Rician or Rayleigh,
    normalised to unit total power so fading reshapes the signal without
    changing the SNR the sweep is measuring.
-4. **Clock error** — a fractional timing offset and a sample-rate offset up to
+4. Clock error: a fractional timing offset and a sample-rate offset up to
    ±50 ppm, applied with a Hann-windowed sinc interpolator.
-5. **Carrier error** — a frequency offset up to ±0.001 cycles/sample (up to
+5. Carrier error: a frequency offset up to ±0.001 cycles/sample (up to
    half a rotation across the window) and a uniformly random phase.
-6. **AWGN** at the target SNR, added last because noise enters at the
+6. AWGN at the target SNR, added last because noise enters at the
    receiver, after the channel has already coloured the signal.
 
 Finally each burst is normalised to unit average power, so absolute amplitude
 cannot leak the SNR into the model.
 
-**No sliding windows.** Every example is a fresh draw of symbols, channel and
+There are no sliding windows. Every example is a fresh draw of symbols, channel and
 impairments, and the three splits are generated from disjoint seeds. Chopping
 one long recording into overlapping windows and splitting those is the most
 common way published modulation-classification accuracies get inflated, and it
@@ -136,7 +137,7 @@ It does real blind receiver work before extracting anything:
    class information.
 2. **Higher-order cumulants** (C20, C40, C41, C42), normalised by the
    appropriate power of C21 for scale invariance and taken in magnitude for
-   rotation invariance — the receiver knows neither the gain nor the carrier
+   rotation invariance, since the receiver knows neither the gain nor the carrier
    phase.
 3. **Instantaneous features** from the Azzouz–Nandi set: spectral peak of the
    normalised-centred amplitude, phase and frequency dispersion, kurtosis,
@@ -161,7 +162,7 @@ forms, and the test suite asserts them:
 
 C40 vanishing for 8PSK is the classic signature that separates it from QPSK.
 Hitting these values is joint evidence that the modulators, the timing
-recovery and the cumulant estimator are all correct — if any one of the three
+recovery and the cumulant estimator are all correct. If any one of the three
 were wrong, the numbers would move.
 
 ### The network
@@ -181,14 +182,14 @@ validation accuracy (stopped at epoch 24 of 30).
 ### Deployment
 
 Exported to ONNX and quantised to int8 with **static** post-training
-quantisation — calibrated on 400 real training bursts, not dynamic
-quantisation, which would leave the convolutions in float and is the wrong
-tool for a convnet.
+quantisation, calibrated on 400 real training bursts. Dynamic quantisation
+would leave the convolutions in float, which is the wrong tool for a
+convnet.
 
 The result is worth stating plainly: **3.4× smaller and 4× faster for 0.04
 percentage points of accuracy.** Above 10 dB the quantised model is in fact
 marginally *better* than fp32 (0.933 vs 0.932), which is noise, not a real
-gain — but it does mean quantisation costs nothing here.
+gain. It does mean quantisation costs nothing here.
 
 At 0.10 ms per 512-sample burst, one core sustains roughly 10,000
 classifications per second.
@@ -230,20 +231,19 @@ pytest
 The signals are synthetic, generated by the channel model described above.
 This is the same approach the RadioML benchmark datasets were built with (GNU
 Radio simulation), and it buys exact control of SNR, which is what makes the
-accuracy-vs-SNR sweep possible at all — you cannot label a real capture with a
-known SNR.
+accuracy-vs-SNR sweep possible at all, because you cannot label a real
+capture with a known SNR.
 
 It also has real limits, and they are worth being concrete about:
 
-- **The channel model is the model.** Real hardware adds IQ imbalance, DC
+- The channel model is the model. Real hardware adds IQ imbalance, DC
   offset, power-amplifier non-linearity and phase noise that this chain does
   not simulate. A model trained here would need retraining or fine-tuning on
   captures before it went anywhere near a real receiver.
-- **The test set shares the simulator's assumptions.** It is a genuine
-  held-out set — independent realisations, disjoint seeds — so it measures
-  generalisation to new signals. It does not measure generalisation to a
-  different radio.
-- **No analogue or frequency-shift-keyed schemes.** AM, FM and GFSK would be
+- The test set shares the simulator's assumptions. It is a genuine held-out
+  set (independent realisations, disjoint seeds) so it measures generalisation
+  to new signals. It does not measure generalisation to a different radio.
+- No analogue or frequency-shift-keyed schemes. AM, FM and GFSK would be
   separated almost trivially by the amplitude and frequency features and would
   flatter the numbers without making the problem harder.
 
@@ -253,16 +253,16 @@ arrays and does not care where they came from.
 
 ## Limitations and next steps
 
-- **16QAM/64QAM is the bottleneck**, and more capacity will not fix it. The
-  fix is a longer observation window — 256 symbols instead of 64 — at a
+- 16QAM/64QAM is the bottleneck, and more capacity will not fix it. The fix
+  is a longer observation window, 256 symbols instead of 64, at a
   proportional cost in latency. Worth measuring the trade-off explicitly.
-- **No confidence calibration.** The model emits logits; a deployed classifier
+- No confidence calibration. The model emits logits; a deployed classifier
   should abstain when uncertain rather than guess between two QAM orders.
   Temperature scaling plus a reject option would be the next thing I built.
-- **Single window length.** Both models are trained and tested at 512 samples.
-  Robustness to variable-length bursts is untested.
-- **int8 only.** The MCU-relevant question is whether this survives further
-  compression — structured pruning, or 4-bit weights — which is not explored.
+- Single window length. Both models are trained and tested at 512 samples.
+  Tolerance of variable-length bursts is untested.
+- int8 only. Whether this survives further compression (structured pruning,
+  or 4-bit weights) is not explored.
 
 ## Layout
 
@@ -278,6 +278,7 @@ src/rfmc/
   evaluate.py     accuracy-vs-SNR, confusion matrices
   export.py       ONNX export, static int8 quantisation, latency benchmark
   plots.py        figures
+  config.py       typed config loaded from YAML
   cli.py          `rfmc <stage>`
 tests/            64 tests, including the cumulant-vs-theory checks
 ```
